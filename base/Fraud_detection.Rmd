@@ -1,0 +1,290 @@
+---
+title: "Detection de Fraude"
+author: "Anicet DJISSOU"
+date: "05/04/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+Dans tous les pays, le système financier est l'un des indicateurs les plus importants de son developpement économique et social.Il est principal pour une croissance économique.
+La banque est devenue l'un des acteurs essentiels au  bon fonctionnement de cette économie. Son activité est caractérisée par sa diversité  qui consiste en la collecte des dépôts, la distribution des crédits, l'animation des marchés financiers et la gestion des moyens de paiment.C'est ainsi que les banques sont de plus en plus ménacées par une multitude de risques qui peuvent nuire à leur activité. Parmi les différents type de risque,nous avons la fraude.
+De nous jours les techniques de fraude evoluent sans cesse et la fraudecoûte cher aux entreprise.
+la detection de fraude par des méthodes de machine learning est l'un des outils d'aide à la décision utilisés par la banque pour lui permettre de détecter la fraude.
+Dans ce projet nous allons construire des algorithmes capable de prédire si la transaction éffectué par le client est une fraude ou pas.Il s'agit donc d'un probleme de classification car nous allons prédire une variable binaire.
+
+# Importation des librairies  et des données
+
+```{r}
+library(caret)
+library(tidyverse)
+library(ROSE)
+library(randomForest)
+library(ggplot2)
+library(caret)
+```
+En ce qui concerne les données, il s'agit des informations collectées sur d'anciens clients d'une banque qui sont utilisés pour prédire le comportement des nouveaux clients.Ces données proviennent de kaggle qui est la plateforme la plus célèbre en matière de compétition en Data Science.
+Nous allons utiliserces données historiques  afin de construire un modèle qui va prédire le statut des nouveaux transactions.   
+
+
+```{r}
+url="https://raw.githubusercontent.com/anicetdjissou/Modele_1/master/base/fraud.txt"
+df=read.csv(url)
+
+head(df)
+dim(df)
+str(df)
+summary(df)
+```
+Nous remarquons que les moyennes et les écart-types sont différents d'une variable à une autre. Les données ne sont pas à la même échelle.Il faudra donc normaliser les données avant de les modéliser. En effet certains algrithmes de machine learning nécessitent une normalisation des données  pour avoir un meilleur résultat.
+
+# Définition de nos variables
+step : unité de temps: step 1 correspond à 1h pour un simulation de 30jours).
+
+type :  CASH-IN, CASH-OUT, DEBIT, PAYMENT et TRANSFER.
+
+amount : le montant de la transaction en devise locale.
+
+nameOrig : le nom du client qui a commencé la transaction.
+
+oldbalanceOrg : le solde initial avant la transaction.
+
+newbalanceOrig : le nouveau solde après la transaction.
+
+nameDest : le nom du destinataire de la transaction.
+
+oldbalanceDest :le solde initial du destinataire avant la transaction.
+
+newbalanceDest : le nouveau solde du destinaire après la transaction.
+
+isFraud : c'est la variable cible. elle indique que si la transaction est une faude (1) ou pas (0)
+
+isFlaggedFraud : vise à contrôler les tranferts massifs. Un transaction de plus de 200000 en une seule transaction est fraude flagrante.
+
+```{r}
+df$isFraud=as.factor(df$isFraud)
+df$isFlaggedFraud=as.factor(df$isFlaggedFraud)
+
+```
+
+La fréquence de la variable cible (isFraud)
+
+```{r}
+print(prop.table(table(df$isFraud)))
+plot(df$isFraud, main = "Statut de la transaction")
+```
+```{r}
+ggplot(df, aes(x = amount, y=type, fill = isFraud)) +
+    geom_boxplot() +
+    labs(x = "", y = "Le montant de la transaction")
+```
+
+
+```{r}
+hist(df$amount, main = "Le montant de la transaction")
+```
+```{r}
+hist(df$oldbalanceOrg, main = "Le solde de sa balance")
+```
+
+
+```{r}
+hist(df$newbalanceOrig, main = "Le solde de sa balance")
+```
+
+
+```{r}
+ggplot(df, aes(x = oldbalanceDest, y=type, fill = isFraud)) +
+    geom_boxplot() +
+    labs(x = "", y = "Le montant de la transaction")
+```
+```
+```{r}
+ggplot(df, aes(x = newbalanceDest, y=type, fill = isFraud)) +
+    geom_boxplot() +
+    labs(x = "", y = "Le montant de la transaction")
+```
+
+
+# Traitement des  valeurs manquantes
+
+```{r}
+sum(is.na(df))
+```
+# Traitement des outliers
+```{r}
+index_outlier_amount= which(df$amount < quantile(df$amount, 0.25) - 1.5 * IQR(df$amount) | df$amount> quantile(df$amount, 0.75) + 1.5 * IQR(df$amount))
+ df <- df[-index_outlier_amount, ]
+```
+
+```{r}
+index_outlier_oldbalanceOrg= which(df$oldbalanceOrg < quantile(df$oldbalanceOrg, 0.25) - 1.5 * IQR(df$oldbalanceOrg) | df$oldbalanceOrg> quantile(df$oldbalanceOrg, 0.75) + 1.5 * IQR(df$oldbalanceOrg))
+ df <- df[-index_outlier_oldbalanceOrg, ]
+```
+
+```{r}
+index_outlier_oldbalanceDest= which(df$oldbalanceDest < quantile(df$oldbalanceDest, 0.25) - 1.5 * IQR(df$oldbalanceDest) | df$oldbalanceDest> quantile(df$oldbalanceDest, 0.75) + 1.5 * IQR(df$oldbalanceDest))
+ df <- df[-index_outlier_oldbalanceDest, ]
+```
+
+```{r}
+index_outlier_newbalanceOrig= which(df$newbalanceOrig < quantile(df$newbalanceOrig, 0.25) - 1.5 * IQR(df$newbalanceOrig) | df$newbalanceOrig> quantile(df$newbalanceOrig, 0.75) + 1.5 * IQR(df$newbalanceOrig))
+ df <- df[-index_outlier_newbalanceOrig, ]
+```
+
+
+```{r}
+index_outlier_newbalanceDest= which(df$newbalanceDest < quantile(df$newbalanceDest, 0.25) - 1.5 * IQR(df$newbalanceDest) | df$newbalanceDest> quantile(df$oldbalanceDest, 0.75) + 1.5 * IQR(df$oldbalanceDest))
+ df <- df[-index_outlier_newbalanceDest, ]
+```
+
+# Normalisation des variables numeriques
+
+```{r}
+# Création d'une fonction de normalisaion
+normalize <- function(x) {
+    return ((x - min(x)) / (max(x) - min(x)))
+}
+```
+
+```{r}
+df1=df[,-1]
+df2=df[,1]
+for (col in colnames(df1)) {
+    if ((class(df1[, col]) != 'factor') & (class(df1[, col]) != 'character')) {
+        df1[, col] <- normalize(df1[, col])
+    }
+}
+```
+
+
+```{r}
+# Vérification de la normalisation 
+df=cbind(df2,df1)
+
+```
+
+```{r}
+head(df)
+```
+
+# Conclusion
+Nous avons une base de données qui comporte 1 lignes et 11 colonnes dans lequel 
+est une fraude.La distribution des variables cibles montrent que nous avons affaire à un problème très déséquilibré car il y a beaucoup de transactions authentiques que de transactions frauduleuses. Nous pourrions être amenés à appliquer des techniques de prétraitement consistant à sous-échantillonner les transactions non frauduleuses ou à suréchantillonner les transactions fraduleuses lors de la division train-test.
+
+```{r}
+seed <- 131
+
+set.seed(seed)
+
+index_train <- sample(1:nrow(df), 0.8 * nrow(df))
+
+train_set <- df[index_train, ]
+
+test_set <- df[-index_train, ]
+```
+
+
+```{r}
+# Nombre de lignes dans train_set et test_set
+
+print(nrow(train_set))
+
+print(nrow(test_set))
+```
+
+
+```{r}
+train_undersampled <- ovun.sample(formula = as.factor(isFraud)~ .,data = train_set, method = 'under', seed = seed)
+
+# Affichage du résultat
+
+print(class(train_undersampled))
+
+print(summary(train_undersampled))
+
+```
+
+
+```{r}
+train <- train_undersampled$data
+```
+
+
+# Modélisation 
+
+```{r}
+model_random <- randomForest(isFraud ~ .,
+                                     data=train, 
+                                     ntree=500,
+                                     mtry=5,
+                                     importance=TRUE)
+```
+
+
+```{r}
+ # model_glm <- glm(as.factor(isFraud)~ .,family='binomial', data = train)
+```
+
+
+
+```{r}
+#model_bag <-bagging(isFraud~.,data=train,nbagg=25)
+```
+
+
+```{r}
+model_evaluation= function(model){
+pred_train=predict(model,train)
+pred_test = predict(model, test_set)
+error_train=pred_train - train[,"isFraud"]
+error_test = pred_test-test_set[,"isFraud"]
+rmse_train =sqrt(mean(error_train)^2)
+rmse_test =sqrt(mean(error_test)^2)
+paste("rmse sur les données train :", rmse_train)
+paste("rmse sur les données test :" , rmse_test)
+
+}
+```
+
+
+```{r}
+model_evaluation(model_random)
+# model_evaluation(model_glm)
+#model_evaluation(model_bag)
+```
+
+
+# Validation croisée simple
+
+```{r}
+#model_cv_ran=train(as.factor(isFraud)~.,data=train, method="randomForest", trControl(method="cv",number=5))
+#model_cv_glm=train(isFraud~., data=train, method="glm", #trControl(method="cv",number=5))
+#model_cv_bag=train(isFraud~., data=train, method="bagging", trControl(method="cv",number=5))
+#model_cv_ran
+#model_cv_glm
+#model_cv_bag
+```
+
+
+```{r}
+#model_evaluation(model_cv_ran)
+#model_evaluation(model_cv_glm)
+#model_evaluation(model_cv_bag)
+```
+
+# model_evalutaion croisé repetée
+
+```{r}
+#model_cv2_ran =train(as.factor(isFraud)~., data=train, method="randomForest", trControl(method="repeatcv",number=,repeats=5))
+#model_cv2_glm =train(isFraud~., data=train, method="glm", trControl(method="repeatcv",number=,repeats=5))
+#model_cv2_bag =train(isFraud~., data=train, method="bagging", trControl(method="repeatcv",number=,repeats=5))
+
+```
+
+
+```{r}
+#model_evaluation(model_cv2_ran)
+#model_evaluation(model_cv2_glm)
+#model_evaluation(model_cv2_bag)
+```
+
